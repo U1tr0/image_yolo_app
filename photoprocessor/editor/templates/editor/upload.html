@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Медиа-редактор</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        .file-card {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .file-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .upload-container {
+            background-color: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .file-preview-container {
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f0f0f0;
+            position: relative;
+            overflow: hidden;
+        }
+        .file-preview {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .video-icon {
+            font-size: 3rem;
+            color: #fff;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .file-meta {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px;
+            font-size: 0.8rem;
+        }
+        .file-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+        .processing-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 2;
+        }
+        .file-type-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+        }
+        .file-size {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-4">
+        <!-- Системные сообщения -->
+        {% if messages %}
+        <div class="container mt-3">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                <i class="bi bi-{% if message.tags == 'success' %}check-circle{% else %}exclamation-triangle{% endif %} me-2"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1 class="mb-0">
+                        <i class="bi bi-collection-play"></i> Медиа-библиотека
+                    </h1>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise"></i> Обновить
+                    </button>
+                </div>
+
+                <!-- Форма загрузки -->
+                <div class="upload-container mb-5">
+                    <form method="post" enctype="multipart/form-data" id="upload-form">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="file-input" class="form-label">
+                                <i class="bi bi-cloud-arrow-up"></i> Выберите файл
+                            </label>
+                            <input type="file" class="form-control" id="file-input" name="file"
+                                   accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
+                            <div class="form-text">
+                                Поддерживаются: JPG, PNG, WEBP (до 10MB), MP4, WEBM (до 50MB)
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-upload"></i> Загрузить
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Список файлов -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3 class="mb-0">
+                        <i class="bi bi-folder2-open"></i> Ваши файлы
+                    </h3>
+                    <span class="badge bg-secondary">
+                        Всего: {{ files|length }}
+                    </span>
+                </div>
+
+                {% if files %}
+                <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4" id="files-container">
+                    {% for file in files %}
+                    <div class="col">
+                        <div class="card file-card h-100">
+                            <!-- Превью файла -->
+                            <div class="file-preview-container">
+                                {% if file.file_exists %}
+                                    {% if file.file_type == 'image' %}
+                                        <img src="{{ file.file.url }}" class="file-preview" alt="{{ file.filename }}">
+                                    {% else %}
+                                        <i class="bi bi-film video-icon"></i>
+                                        <div class="file-meta text-center">
+                                            {{ file.formatted_size }} | {{ file.duration|default:"00:00" }}
+                                        </div>
+                                    {% endif %}
+
+                                    {% if file.processing_status == 'processing' %}
+                                        <span class="processing-badge badge bg-warning">
+                                            <i class="bi bi-hourglass"></i> Обработка
+                                        </span>
+                                    {% endif %}
+
+                                    <span class="file-type-badge badge bg-{% if file.file_type == 'image' %}info{% else %}warning{% endif %}">
+                                        {{ file.file_type }}
+                                    </span>
+                                {% else %}
+                                    <div class="w-100 h-100 d-flex flex-column align-items-center justify-content-center bg-danger bg-opacity-10">
+                                        <i class="bi bi-exclamation-triangle text-danger fs-1"></i>
+                                        <p class="text-danger mt-2">Файл не найден</p>
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Информация о файле -->
+                            <div class="card-body">
+                                <h6 class="card-title text-truncate" title="{{ file.filename }}">
+                                    {{ file.filename }}
+                                </h6>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-muted">
+                                        {{ file.uploaded_at|date:"d.m.Y H:i" }}
+                                    </small>
+                                    <span class="file-size">
+                                        {{ file.formatted_size }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Кнопки действий -->
+                            <div class="card-footer bg-transparent border-top-0">
+                                <div class="d-flex gap-2">
+                                    {% if file.file_exists %}
+                                        <a href="{% url 'edit_file' file.id %}" class="btn btn-sm btn-outline-primary flex-grow-1">
+                                            <i class="bi bi-pencil-square"></i> Редактировать
+                                        </a>
+                                    {% endif %}
+                                    <button class="btn btn-sm btn-outline-danger delete-btn"
+                                            data-file-id="{{ file.id }}"
+                                            data-url="{% url 'delete_file' file.id %}"
+                                            {% if not file.file_exists %}disabled{% endif %}>
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-folder-x" style="font-size: 3rem; color: #6c757d;"></i>
+                    <h4 class="mt-3">Нет загруженных файлов</h4>
+                    <p class="text-muted">Загрузите ваши изображения или видео, чтобы начать работу</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Обработка удаления файлов
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+
+                    if (this.disabled) return;
+
+                    const fileId = this.dataset.fileId;
+                    const url = this.dataset.url;
+
+                    if (confirm('Удалить этот файл навсегда?')) {
+                        this.innerHTML = '<i class="bi bi-hourglass"></i>';
+                        this.disabled = true;
+
+                        fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': '{{ csrf_token }}',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                const card = this.closest('.col');
+                                card.style.opacity = '0';
+                                setTimeout(() => card.remove(), 300);
+
+                                // Обновляем счетчик файлов
+                                const counter = document.querySelector('.badge.bg-secondary');
+                                if (counter) {
+                                    const count = parseInt(counter.textContent.split(': ')[1]) - 1;
+                                    counter.textContent = 'Всего: ' + count;
+                                }
+                            } else {
+                                alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+                                this.innerHTML = '<i class="bi bi-trash"></i>';
+                                this.disabled = false;
+                            }
+                        })
+                        .catch(error => {
+                            alert('Ошибка сети: ' + error);
+                            this.innerHTML = '<i class="bi bi-trash"></i>';
+                            this.disabled = false;
+                        });
+                    }
+                });
+            });
+
+            // Проверка размера файла перед загрузкой
+            document.getElementById('file-input').addEventListener('change', function() {
+                const maxSize = this.files[0].type.startsWith('image') ? 10 * 1024 * 1024 : 50 * 1024 * 1024;
+                if (this.files[0].size > maxSize) {
+                    alert('Файл слишком большой! Максимальный размер: ' +
+                          (maxSize === 10 * 1024 * 1024 ? '10MB' : '50MB'));
+                    this.value = '';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

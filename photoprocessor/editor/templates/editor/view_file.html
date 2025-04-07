@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Редактирование - {{ file.file.name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .media-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .back-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <!-- Кнопка "Назад" -->
+    <a href="{% url 'upload_file' %}" class="btn btn-outline-secondary back-btn">
+        <i class="bi bi-arrow-left"></i> Назад к списку
+    </a>
+
+    <div class="container py-5">
+        <div class="media-container mt-4">
+            <h2 class="text-center mb-4">
+                {% if file.file_type == 'image' %}
+                    <i class="bi bi-image"></i> Изображение
+                {% else %}
+                    <i class="bi bi-film"></i> Видео
+                {% endif %}
+            </h2>
+
+            <!-- Контент -->
+            <div class="text-center mb-4">
+                {% if file.file_type == 'image' %}
+                    <img src="{{ file.file.url }}" class="img-fluid rounded shadow" alt="Изображение">
+                {% else %}
+                    <video controls class="w-100 rounded shadow">
+                        <source src="{{ file.file.url }}" type="video/mp4">
+                    </video>
+                {% endif %}
+            </div>
+
+            <!-- Информация о файле -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Информация о файле</h5>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">
+                            <strong>Имя:</strong> {{ file.file.name }}
+                        </li>
+                        <li class="list-group-item">
+                            <strong>Тип:</strong>
+                            <span class="badge bg-{% if file.file_type == 'image' %}info{% else %}warning{% endif %}">
+                                {{ file.file_type }}
+                            </span>
+                        </li>
+                        <li class="list-group-item">
+                            <strong>Размер:</strong> {{ file.file.size|filesizeformat }}
+                        </li>
+                        <li class="list-group-item">
+                            <strong>Загружен:</strong> {{ file.uploaded_at|date:"d.m.Y H:i" }}
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Будущие инструменты редактирования -->
+            <div class="alert alert-warning">
+                <h4><i class="bi bi-tools"></i> Инструменты редактирования</h4>
+                <p>Здесь будут фильтры и настройки (в следующих обновлениях).</p>
+                <button class="btn btn-primary" disabled>
+                    <i class="bi bi-sliders"></i> Настройки
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Иконки и JS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
