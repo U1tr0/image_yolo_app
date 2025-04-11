@@ -134,3 +134,7 @@ try:
     FFMPEG_AVAILABLE = True
 except:
     FFMPEG_AVAILABLE = False
+
+# Создаем необходимые директории при запуске
+os.makedirs(os.path.join(MEDIA_ROOT, 'yolo_results'), exist_ok=True)
+os.makedirs(os.path.join(MEDIA_ROOT, 'temp'), exist_ok=True)

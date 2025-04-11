@@ -342,37 +342,20 @@ def delete_file(request, file_id):
 
 def analyze_file(request, file_id):
     """Обработка файла через YOLO и отображение результатов"""
-    print(f"\n=== Начало анализа файла {file_id} ===")
     file_obj = get_object_or_404(MediaFile, id=file_id)
 
     if not file_obj.file_exists:
-        print("Файл не существует в storage")
         messages.error(request, "Файл не найден")
         return redirect('upload_file')
 
     try:
-        # Полный путь к исходному файлу
         file_path = os.path.join(settings.MEDIA_ROOT, file_obj.file.name)
-        print(f"Полный путь к файлу: {file_path}")
-        print(f"Файл существует на диске: {os.path.exists(file_path)}")
 
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Файл {file_path} не найден на диске")
-
-        # Для изображений
         if file_obj.file_type == 'image':
-            print("Обработка изображения...")
+            # Существующая обработка изображений
             results = YOLO_MODEL(file_path)
-            print("Результаты YOLO:", results)
-
             annotated_img_path = save_yolo_result_image(results, file_obj)
-            print("Путь к обработанному изображению:", annotated_img_path)
-
-            if not annotated_img_path:
-                raise ValueError("Не удалось сохранить результат анализа")
-
             detection_data = prepare_detection_data(results)
-            print("Обнаруженные объекты:", detection_data)
 
             return render(request, 'editor/analyze.html', {
                 "file": file_obj,
@@ -381,43 +364,120 @@ def analyze_file(request, file_id):
                 "is_video": False
             })
 
-        # Для видео (обрабатываем первый кадр)
+
         elif file_obj.file_type == 'video':
-            print("Обработка видео...")
-            cap = cv2.VideoCapture(file_path)
-            success, frame = cap.read()
-            if not success:
-                raise ValueError("Не удалось прочитать видеофайл")
 
-            # Сохраняем временный кадр
-            temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp')
-            os.makedirs(temp_dir, exist_ok=True)
-            temp_img_path = os.path.join(temp_dir, f"frame_{file_obj.id}.jpg")
-            cv2.imwrite(temp_img_path, frame)
-            print("Временный кадр сохранен:", temp_img_path)
+            # Создаем уникальное имя для обработанного видео
 
-            # Обработка кадра через YOLO
-            results = YOLO_MODEL(temp_img_path)
-            annotated_img_path = save_yolo_result_image(results, file_obj, is_video=True)
-            detection_data = prepare_detection_data(results)
+            output_filename = f"processed_{file_obj.id}_{os.path.basename(file_obj.file.name)}"
 
-            # Удаляем временный файл
+            output_path = os.path.join(settings.MEDIA_ROOT, 'yolo_results', output_filename)
+
+            # Проверяем/создаем директорию
+
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            # Обрабатываем видео
+
             try:
-                os.remove(temp_img_path)
-            except:
-                pass
 
-            return render(request, 'editor/analyze.html', {
+                process_video_with_yolo(
+
+                    os.path.join(settings.MEDIA_ROOT, file_obj.file.name),
+
+                    output_path
+
+                )
+
+            except Exception as e:
+
+                messages.error(request, f"Ошибка обработки видео: {str(e)}")
+
+                return redirect('view_file', file_id=file_id)
+
+            # Проверяем, что файл создан
+
+            if not os.path.exists(output_path):
+                messages.error(request, "Не удалось создать обработанное видео")
+
+                return redirect('view_file', file_id=file_id)
+
+            # Создаем превью
+
+            preview_filename = f"preview_{file_obj.id}.jpg"
+
+            preview_path = os.path.join(settings.MEDIA_ROOT, 'yolo_results', preview_filename)
+
+            extract_video_preview(output_path, preview_path)
+
+            return render(request, 'editor/analyze_video.html', {
+
                 "file": file_obj,
-                "annotated_img_url": annotated_img_path,
-                "objects": detection_data,
+
+                "processed_video_url": os.path.join(settings.MEDIA_URL, 'yolo_results', output_filename).replace('\\',
+                                                                                                                 '/'),
+
+                "preview_url": os.path.join(settings.MEDIA_URL, 'yolo_results', preview_filename).replace('\\', '/'),
+
                 "is_video": True
+
             })
 
     except Exception as e:
-        print(f"Ошибка при анализе: {str(e)}")
         messages.error(request, f"Ошибка анализа: {str(e)}")
         return redirect('view_file', file_id=file_id)
+
+
+def process_video_with_yolo(input_path, output_path):
+    """Обрабатывает видео через YOLO и сохраняет результат"""
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise ValueError("Не удалось открыть видеофайл")
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    # Используем более совместимый кодек
+    fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264 кодек
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    if not out.isOpened():
+        cap.release()
+        raise ValueError("Не удалось создать выходной видеофайл")
+
+    frame_count = 0
+    try:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # Обрабатываем каждый N-й кадр для ускорения (например, каждый 2-й)
+            if frame_count % 2 == 0:
+                results = YOLO_MODEL(frame)
+                annotated_frame = results[0].plot()
+                out.write(annotated_frame)
+
+            frame_count += 1
+
+            # Логирование прогресса
+            if frame_count % 10 == 0:
+                print(f"Обработано кадров: {frame_count}")
+
+    finally:
+        cap.release()
+        out.release()
+        print(f"Видео обработка завершена. Всего кадров: {frame_count}")
+
+
+def extract_video_preview(video_path, output_path):
+    """Извлекает первый кадр видео для превью"""
+    cap = cv2.VideoCapture(video_path)
+    ret, frame = cap.read()
+    if ret:
+        cv2.imwrite(output_path, frame)
+    cap.release()
 
 
 def save_yolo_result_image(results, file_obj, is_video=False):
