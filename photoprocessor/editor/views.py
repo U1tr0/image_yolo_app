@@ -13,11 +13,12 @@ import numpy as np
 import time
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from ultralytics import YOLO
 
 # Глобальные настройки обработки
 FFMPEG_PATH = 'ffmpeg'  # или полный путь к бинарнику
 MAX_VIDEO_DURATION = 600  # 10 минут в секундах
-
+YOLO_MODEL = YOLO('yolov8n.pt')
 
 def upload_file(request):
     # Автоматическая очистка битых записей
@@ -337,3 +338,121 @@ def delete_file(request, file_id):
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def analyze_file(request, file_id):
+    """Обработка файла через YOLO и отображение результатов"""
+    print(f"\n=== Начало анализа файла {file_id} ===")
+    file_obj = get_object_or_404(MediaFile, id=file_id)
+
+    if not file_obj.file_exists:
+        print("Файл не существует в storage")
+        messages.error(request, "Файл не найден")
+        return redirect('upload_file')
+
+    try:
+        # Полный путь к исходному файлу
+        file_path = os.path.join(settings.MEDIA_ROOT, file_obj.file.name)
+        print(f"Полный путь к файлу: {file_path}")
+        print(f"Файл существует на диске: {os.path.exists(file_path)}")
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Файл {file_path} не найден на диске")
+
+        # Для изображений
+        if file_obj.file_type == 'image':
+            print("Обработка изображения...")
+            results = YOLO_MODEL(file_path)
+            print("Результаты YOLO:", results)
+
+            annotated_img_path = save_yolo_result_image(results, file_obj)
+            print("Путь к обработанному изображению:", annotated_img_path)
+
+            if not annotated_img_path:
+                raise ValueError("Не удалось сохранить результат анализа")
+
+            detection_data = prepare_detection_data(results)
+            print("Обнаруженные объекты:", detection_data)
+
+            return render(request, 'editor/analyze.html', {
+                "file": file_obj,
+                "annotated_img_url": annotated_img_path,
+                "objects": detection_data,
+                "is_video": False
+            })
+
+        # Для видео (обрабатываем первый кадр)
+        elif file_obj.file_type == 'video':
+            print("Обработка видео...")
+            cap = cv2.VideoCapture(file_path)
+            success, frame = cap.read()
+            if not success:
+                raise ValueError("Не удалось прочитать видеофайл")
+
+            # Сохраняем временный кадр
+            temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp')
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_img_path = os.path.join(temp_dir, f"frame_{file_obj.id}.jpg")
+            cv2.imwrite(temp_img_path, frame)
+            print("Временный кадр сохранен:", temp_img_path)
+
+            # Обработка кадра через YOLO
+            results = YOLO_MODEL(temp_img_path)
+            annotated_img_path = save_yolo_result_image(results, file_obj, is_video=True)
+            detection_data = prepare_detection_data(results)
+
+            # Удаляем временный файл
+            try:
+                os.remove(temp_img_path)
+            except:
+                pass
+
+            return render(request, 'editor/analyze.html', {
+                "file": file_obj,
+                "annotated_img_url": annotated_img_path,
+                "objects": detection_data,
+                "is_video": True
+            })
+
+    except Exception as e:
+        print(f"Ошибка при анализе: {str(e)}")
+        messages.error(request, f"Ошибка анализа: {str(e)}")
+        return redirect('view_file', file_id=file_id)
+
+
+def save_yolo_result_image(results, file_obj, is_video=False):
+    """Сохраняет изображение с bounding boxes и возвращает относительный URL"""
+    try:
+        output_dir = os.path.join(settings.MEDIA_ROOT, 'yolo_results')
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Генерируем уникальное имя файла
+        original_name = os.path.basename(file_obj.file.name)
+        prefix = "video_" if is_video else "image_"
+        output_filename = f"{prefix}{file_obj.id}_{original_name}"
+        output_path = os.path.join(output_dir, output_filename)
+
+        # Сохраняем изображение с bounding boxes
+        for result in results:
+            im_array = result.plot()  # Рисуем bounding boxes
+            cv2.imwrite(output_path, im_array)
+
+        # Возвращаем URL с правильными слешами
+        result_url = os.path.join(settings.MEDIA_URL, 'yolo_results', output_filename).replace('\\', '/')
+        return result_url
+    except Exception as e:
+        print(f"Ошибка сохранения результата: {str(e)}")
+        return None
+
+def prepare_detection_data(results):
+    """Формирует список обнаруженных объектов из результатов YOLO"""
+    detection_data = []
+    for result in results:
+        for box in result.boxes:
+            detection_data.append({
+                "class": result.names[int(box.cls)],
+                "confidence": float(box.conf),
+                "bbox": [round(x, 2) for x in box.xyxy[0].tolist()]  # Координаты bounding box
+            })
+    # Сортируем по уверенности (от высокой к низкой)
+    return sorted(detection_data, key=lambda x: x['confidence'], reverse=True)
