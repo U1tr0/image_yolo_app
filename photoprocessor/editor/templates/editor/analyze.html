@@ -6,61 +6,155 @@
     <title>Анализ изображения</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --info-color: #4895ef;
+            --warning-color: #f8961e;
+            --dark-color: #212529;
+            --light-color: #f8f9fa;
+        }
+
+        body {
+            background-color: #f5f7fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .analysis-header {
+            background: linear-gradient(135deg, var(--info-color), var(--primary-color));
+            color: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(72, 149, 239, 0.15);
+            position: relative;
+        }
+
+        .analyzed-image-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+            background: var(--dark-color);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .analyzed-image {
+            max-width: 100%;
+            max-height: 70vh;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            border-radius: 6px;
+        }
+
+        .detected-objects {
+            margin-top: 30px;
+            border: none;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+            background-color: white;
+        }
+
+        .btn-back {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: white;
+            color: var(--info-color);
+            border: 2px solid var(--info-color);
+            padding: 0.5rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .btn-back:hover {
+            background-color: var(--info-color);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(72, 149, 239, 0.3);
+        }
+
+        @media (max-width: 768px) {
+            .analysis-header {
+                padding: 1rem;
+                margin-top: 2rem;
+            }
+
+            .analyzed-image-container {
+                padding: 10px;
+            }
+
+            .btn-back {
+                top: 10px;
+                left: 10px;
+                padding: 0.4rem 1rem;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
 </head>
-<body class="bg-light">
+<body>
+    <!-- Кнопка "Назад" в левом верхнем углу -->
+    <a href="{% url 'view_file' file.id %}" class="btn-back">
+        <i class="bi bi-arrow-left me-2"></i>Назад
+    </a>
+
     <div class="container py-4">
-        <div class="row justify-content-center">
-            <div class="col-lg-10">
-                <h1 class="mb-4"><i class="bi bi-search"></i> Результаты анализа</h1>
+        <!-- Заголовок с информацией -->
+        <div class="analysis-header">
+            <h1 class="display-6 mb-3">
+                <i class="bi bi-search me-2"></i>Анализ фотографии
+            </h1>
+            <p class="lead mb-0">{{ file.filename }}</p>
+        </div>
 
-                {% if annotated_img_url %}
-                    <div class="card mb-4">
-                        <div class="card-body">
-                            <h5 class="card-title">Анализ изображения</h5>
-                            <img src="{{ annotated_img_url }}" class="img-fluid" alt="Результаты анализа">
-                        </div>
-                    </div>
+        {% if annotated_img_url %}
+            <!-- Контейнер с анализированным изображением -->
+            <div class="analyzed-image-container">
+                <img src="{{ annotated_img_url }}" class="analyzed-image" alt="Результаты анализа">
+            </div>
 
-                    <div class="card">
-                        <div class="card-body">
-                            <h5 class="card-title">Обнаруженные объекты ({{ objects|length }})</h5>
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Объект</th>
-                                        <th>Уверенность</th>
-                                        <th>Координаты</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for obj in objects %}
-                                    <tr>
-                                        <td>{{ obj.class }}</td>
-                                        <td>{{ obj.confidence|floatformat:2 }}</td>
-                                        <td>{{ obj.bbox|join:", " }}</td>
-                                    </tr>
-                                    {% empty %}
-                                    <tr>
-                                        <td colspan="3" class="text-center">Объекты не обнаружены</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                {% else %}
-                    <div class="alert alert-danger">
-                        Не удалось получить результаты анализа
-                    </div>
-                {% endif %}
-
-                <div class="mt-4">
-                    <a href="{% url 'view_file' file.id %}" class="btn btn-primary">
-                        <i class="bi bi-arrow-left"></i> Назад к файлу
-                    </a>
+            <!-- Список обнаруженных объектов -->
+            <div class="card detected-objects">
+                <div class="card-body">
+                    <h5 class="card-title">Обнаруженные объекты ({{ objects|length }})</h5>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Объект</th>
+                                <th>Уверенность</th>
+                                <th>Координаты</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for obj in objects %}
+                            <tr>
+                                <td>{{ obj.class }}</td>
+                                <td>{{ obj.confidence|floatformat:2 }}</td>
+                                <td>{{ obj.bbox|join:", " }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center">Объекты не обнаружены</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </div>
+        {% else %}
+            <div class="alert alert-danger">
+                Не удалось получить результаты анализа
+            </div>
+        {% endif %}
     </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

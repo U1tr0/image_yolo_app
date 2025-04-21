@@ -43,6 +43,24 @@ class MediaFile(models.Model):
         verbose_name='Разрешение'
     )
 
+    # Новые поля для кэширования результатов YOLO
+    yolo_processed_file = models.FileField(
+        upload_to='yolo_results/',
+        null=True,
+        blank=True,
+        verbose_name='Файл с разметкой YOLO'
+    )
+    yolo_processed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Время обработки YOLO'
+    )
+    yolo_objects = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name='Обнаруженные объекты'
+    )
+
     class Meta:
         verbose_name = 'Медиафайл'
         verbose_name_plural = 'Медиафайлы'
@@ -99,10 +117,15 @@ class MediaFile(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        """Удаляет файл и запись"""
+        """Удаляет все связанные файлы"""
         if self.file_exists:
             try:
                 default_storage.delete(self.file.name)
+            except:
+                pass
+        if self.yolo_processed_file and default_storage.exists(self.yolo_processed_file.name):
+            try:
+                default_storage.delete(self.yolo_processed_file.name)
             except:
                 pass
         super().delete(*args, **kwargs)

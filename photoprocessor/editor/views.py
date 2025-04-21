@@ -341,21 +341,31 @@ def delete_file(request, file_id):
 
 
 def analyze_file(request, file_id):
-    """Обработка файла через YOLO и отображение результатов"""
+    """Обработка файла через YOLO с кэшированием результатов"""
     file_obj = get_object_or_404(MediaFile, id=file_id)
 
     if not file_obj.file_exists:
         messages.error(request, "Файл не найден")
         return redirect('upload_file')
 
+    # Если есть кэшированный результат и файл существует - используем его
+    if file_obj.yolo_processed_file and default_storage.exists(file_obj.yolo_processed_file.name):
+        return render_cached_result(request, file_obj)
+
+    # Иначе проводим анализ
     try:
         file_path = os.path.join(settings.MEDIA_ROOT, file_obj.file.name)
 
         if file_obj.file_type == 'image':
-            # Существующая обработка изображений
             results = YOLO_MODEL(file_path)
             annotated_img_path = save_yolo_result_image(results, file_obj)
             detection_data = prepare_detection_data(results)
+
+            # Сохраняем результаты в модель
+            file_obj.yolo_processed_file = os.path.relpath(annotated_img_path, settings.MEDIA_ROOT)
+            file_obj.yolo_objects = detection_data
+            file_obj.yolo_processed_at = timezone.now()
+            file_obj.save()
 
             return render(request, 'editor/analyze.html', {
                 "file": file_obj,
@@ -364,68 +374,61 @@ def analyze_file(request, file_id):
                 "is_video": False
             })
 
-
         elif file_obj.file_type == 'video':
-
-            # Создаем уникальное имя для обработанного видео
-
             output_filename = f"processed_{file_obj.id}_{os.path.basename(file_obj.file.name)}"
-
             output_path = os.path.join(settings.MEDIA_ROOT, 'yolo_results', output_filename)
-
-            # Проверяем/создаем директорию
-
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-            # Обрабатываем видео
-
-            try:
-
-                process_video_with_yolo(
-
-                    os.path.join(settings.MEDIA_ROOT, file_obj.file.name),
-
-                    output_path
-
-                )
-
-            except Exception as e:
-
-                messages.error(request, f"Ошибка обработки видео: {str(e)}")
-
-                return redirect('view_file', file_id=file_id)
-
-            # Проверяем, что файл создан
-
-            if not os.path.exists(output_path):
-                messages.error(request, "Не удалось создать обработанное видео")
-
-                return redirect('view_file', file_id=file_id)
-
-            # Создаем превью
+            process_video_with_yolo(
+                os.path.join(settings.MEDIA_ROOT, file_obj.file.name),
+                output_path
+            )
 
             preview_filename = f"preview_{file_obj.id}.jpg"
-
             preview_path = os.path.join(settings.MEDIA_ROOT, 'yolo_results', preview_filename)
-
             extract_video_preview(output_path, preview_path)
 
+            # Сохраняем результаты в модель
+            file_obj.yolo_processed_file = os.path.relpath(output_path, settings.MEDIA_ROOT)
+            file_obj.yolo_processed_at = timezone.now()
+            file_obj.save()
+
             return render(request, 'editor/analyze_video.html', {
-
                 "file": file_obj,
-
                 "processed_video_url": os.path.join(settings.MEDIA_URL, 'yolo_results', output_filename).replace('\\',
                                                                                                                  '/'),
-
                 "preview_url": os.path.join(settings.MEDIA_URL, 'yolo_results', preview_filename).replace('\\', '/'),
-
                 "is_video": True
-
             })
 
     except Exception as e:
         messages.error(request, f"Ошибка анализа: {str(e)}")
         return redirect('view_file', file_id=file_id)
+
+
+def render_cached_result(request, file_obj):
+    """Рендерит кэшированный результат анализа"""
+    if file_obj.file_type == 'image':
+        return render(request, 'editor/analyze.html', {
+            "file": file_obj,
+            "annotated_img_url": file_obj.yolo_processed_file.url,
+            "objects": file_obj.yolo_objects or [],
+            "is_video": False
+        })
+    else:
+        preview_filename = f"preview_{file_obj.id}.jpg"
+        preview_path = os.path.join(settings.MEDIA_ROOT, 'yolo_results', preview_filename)
+
+        # Если превью нет - создаем
+        if not os.path.exists(preview_path):
+            extract_video_preview(file_obj.yolo_processed_file.path, preview_path)
+
+        return render(request, 'editor/analyze_video.html', {
+            "file": file_obj,
+            "processed_video_url": file_obj.yolo_processed_file.url,
+            "preview_url": os.path.join(settings.MEDIA_URL, 'yolo_results', preview_filename).replace('\\', '/'),
+            "is_video": True
+        })
 
 
 def process_video_with_yolo(input_path, output_path):
@@ -480,26 +483,21 @@ def extract_video_preview(video_path, output_path):
     cap.release()
 
 
-def save_yolo_result_image(results, file_obj, is_video=False):
-    """Сохраняет изображение с bounding boxes и возвращает относительный URL"""
+def save_yolo_result_image(results, file_obj):
+    """Сохраняет изображение с bounding boxes и возвращает абсолютный путь"""
     try:
         output_dir = os.path.join(settings.MEDIA_ROOT, 'yolo_results')
         os.makedirs(output_dir, exist_ok=True)
 
-        # Генерируем уникальное имя файла
         original_name = os.path.basename(file_obj.file.name)
-        prefix = "video_" if is_video else "image_"
-        output_filename = f"{prefix}{file_obj.id}_{original_name}"
+        output_filename = f"image_{file_obj.id}_{original_name}"
         output_path = os.path.join(output_dir, output_filename)
 
-        # Сохраняем изображение с bounding boxes
         for result in results:
-            im_array = result.plot()  # Рисуем bounding boxes
+            im_array = result.plot()
             cv2.imwrite(output_path, im_array)
 
-        # Возвращаем URL с правильными слешами
-        result_url = os.path.join(settings.MEDIA_URL, 'yolo_results', output_filename).replace('\\', '/')
-        return result_url
+        return output_path  # Возвращаем абсолютный путь
     except Exception as e:
         print(f"Ошибка сохранения результата: {str(e)}")
         return None
@@ -516,3 +514,26 @@ def prepare_detection_data(results):
             })
     # Сортируем по уверенности (от высокой к низкой)
     return sorted(detection_data, key=lambda x: x['confidence'], reverse=True)
+
+
+@require_POST
+def reanalyze_file(request, file_id):
+    """Принудительно перезапускает анализ YOLO"""
+    file_obj = get_object_or_404(MediaFile, id=file_id)
+
+    # Удаляем старые результаты
+    if file_obj.yolo_processed_file:
+        try:
+            # Удаляем физический файл
+            if default_storage.exists(file_obj.yolo_processed_file.name):
+                default_storage.delete(file_obj.yolo_processed_file.name)
+        except Exception as e:
+            print(f"Ошибка удаления файла: {str(e)}")
+
+    # Очищаем поля в БД
+    file_obj.yolo_processed_file = None
+    file_obj.yolo_objects = None
+    file_obj.yolo_processed_at = None
+    file_obj.save()
+
+    return redirect('analyze_file', file_id=file_id)
