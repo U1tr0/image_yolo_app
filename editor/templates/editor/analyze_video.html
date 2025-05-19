@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Анализ видео</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --info-color: #4895ef;
+            --warning-color: #f8961e;
+            --dark-color: #212529;
+            --light-color: #f8f9fa;
+        }
+
+        body {
+            background-color: #f5f7fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .analysis-header {
+            background: linear-gradient(135deg, var(--info-color), var(--primary-color));
+            color: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(72, 149, 239, 0.15);
+            position: relative;
+        }
+
+        .video-container {
+            position: relative;
+            background: var(--dark-color);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            margin: 0 auto;
+            max-width: 900px;
+        }
+
+        .video-player {
+            width: 100%;
+            max-height: 70vh;
+            border-radius: 6px;
+        }
+
+        .video-placeholder {
+            width: 100%;
+            height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .btn-back {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: white;
+            color: var(--info-color);
+            border: 2px solid var(--info-color);
+            padding: 0.5rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .btn-back:hover {
+            background-color: var(--info-color);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(72, 149, 239, 0.3);
+        }
+
+        @media (max-width: 768px) {
+            .analysis-header {
+                padding: 1rem;
+                margin-top: 2rem;
+            }
+
+            .video-container {
+                padding: 10px;
+            }
+
+            .btn-back {
+                top: 10px;
+                left: 10px;
+                padding: 0.4rem 1rem;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Кнопка "Назад" в левом верхнем углу -->
+    <a href="{% url 'view_file' file.id %}" class="btn-back">
+        <i class="bi bi-arrow-left me-2"></i>Назад
+    </a>
+
+    <div class="container py-4">
+        <!-- Заголовок с информацией -->
+        <div class="analysis-header">
+            <h1 class="display-6 mb-3">
+                <i class="bi bi-search me-2"></i>Анализ видео
+            </h1>
+            <p class="lead mb-0">{{ file.filename }}</p>
+        </div>
+
+        <!-- Контейнер с видео -->
+        <div class="video-container">
+            {% if processed_video_url %}
+                <video controls class="video-player" poster="{{ preview_url }}">
+                    <source src="{{ processed_video_url }}" type="video/mp4">
+                    Ваш браузер не поддерживает воспроизведение видео.
+                </video>
+            {% else %}
+                <div class="video-placeholder">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                        <h5 class="mb-1">Идет обработка видео</h5>
+                        <p class="small opacity-75">Пожалуйста, подождите...</p>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // Автовоспроизведение видео (если разрешено)
+        document.addEventListener('DOMContentLoaded', function() {
+            const video = document.querySelector('video');
+            if (video) {
+                video.play().catch(e => {
+                    console.log('Автовоспроизведение запрещено');
+                });
+            }
+        });
+    </script>
+</body>
+</html>
