@@ -1,4 +1,4 @@
 Django==5.2
 numpy==2.2.6
-opencv_python==4.11.0.8
+opencv_python==4.11.0.86
 ultralytics==8.3.107
